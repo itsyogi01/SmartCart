@@ -1,17 +1,13 @@
 import streamlit as st
 import pandas as pd
-import pickle
+import requests
 
 
 # =========================
-# LOAD MODEL
+# FASTAPI URL
 # =========================
 
-with open("model.pkl", "rb") as file:
-    model = pickle.load(file)
-
-with open("model_columns.pkl", "rb") as file:
-    model_columns = pickle.load(file)
+API_URL = "https://smartcart-u41g.onrender.com"
 
 
 # =========================
@@ -78,7 +74,6 @@ with c3:
 
 
 # =========================
-# =========================
 # CUSTOMER INPUT
 # =========================
 
@@ -109,11 +104,9 @@ for i, column in enumerate(features):
                 ["Male", "Female"]
             )
 
-            # Dataset encoding
-            if gender == "Male":
-                customer_data[column] = 1
-            else:
-                customer_data[column] = 0
+            customer_data[column] = (
+                1 if gender == "Male" else 0
+            )
 
 
         # =========================
@@ -155,7 +148,7 @@ for i, column in enumerate(features):
 
 
         # =========================
-        # DISCOUNTS AVAILABLE
+        # DISCOUNTS AVAILED
         # =========================
 
         elif column == "DiscountsAvailed":
@@ -171,7 +164,7 @@ for i, column in enumerate(features):
 
 
         # =========================
-        # OTHER NUMERIC FEATURES
+        # NUMERIC FEATURES
         # =========================
 
         else:
@@ -196,7 +189,6 @@ for i, column in enumerate(features):
             )
 
 
-
 # =========================
 # PREDICT
 # =========================
@@ -206,93 +198,106 @@ if st.button(
     use_container_width=True
 ):
 
-    input_data = pd.DataFrame(
-        [customer_data]
-    )
+    try:
 
-    # Convert categorical values
-    input_data = pd.get_dummies(
-        input_data,
-        drop_first=True
-    )
+        response = requests.post(
+            API_URL,
+            json={
+                "data": customer_data
+            },
+            timeout=60
+        )
 
-    # Match training columns
-    input_data = input_data.reindex(
-        columns=model_columns,
-        fill_value=0
-    )
+        if response.status_code == 200:
 
-    # Prediction
-    prediction = model.predict(
-        input_data
-    )[0]
+            result = response.json()
 
-    probability = model.predict_proba(
-        input_data
-    )[0][1]
+            prediction = result["prediction"]
 
-
-    # =========================
-    # RESULT
-    # =========================
-
-    st.write("---")
-
-    st.header("🎯 Prediction Result")
-
-    c1, c2 = st.columns(2)
-
-    with c1:
-
-        if prediction == 1:
-
-            st.success(
-                "🟢 Likely to Purchase"
+            probability = (
+                result["purchase_probability"] / 100
             )
+
+
+            # =========================
+            # RESULT
+            # =========================
+
+            st.write("---")
+
+            st.header("🎯 Prediction Result")
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+
+                if prediction == 1:
+
+                    st.success(
+                        "🟢 Likely to Purchase"
+                    )
+
+                else:
+
+                    st.error(
+                        "🔴 Unlikely to Purchase"
+                    )
+
+            with c2:
+
+                st.metric(
+                    "Purchase Probability",
+                    f"{probability * 100:.2f}%"
+                )
+
+            st.progress(
+                float(probability)
+            )
+
+
+            # =========================
+            # BUSINESS RECOMMENDATION
+            # =========================
+
+            st.write(
+                "### 💡 Business Recommendation"
+            )
+
+            if probability >= 0.70:
+
+                st.success(
+                    "High purchase intent → "
+                    "Show personalized offers "
+                    "and product recommendations."
+                )
+
+            elif probability >= 0.40:
+
+                st.info(
+                    "Medium purchase intent → "
+                    "Show product recommendations "
+                    "or limited-time offers."
+                )
+
+            else:
+
+                st.warning(
+                    "Low purchase intent → "
+                    "Focus on customer engagement."
+                )
 
         else:
 
             st.error(
-                "🔴 Unlikely to Purchase"
+                f"❌ FastAPI Error: {response.status_code}"
             )
 
-    with c2:
+            st.write(response.text)
 
-        st.metric(
-            "Purchase Probability",
-            f"{probability * 100:.2f}%"
+    except requests.exceptions.RequestException as e:
+
+        st.error(
+            "❌ Could not connect to FastAPI."
         )
 
-    st.progress(
-        float(probability)
-    )
-
-
-    # =========================
-    # BUSINESS RECOMMENDATION
-    # =========================
-
-    st.write("### 💡 Business Recommendation")
-
-    if probability >= 0.70:
-
-        st.success(
-            "High purchase intent → "
-            "Show personalized offers "
-            "and product recommendations."
-        )
-
-    elif probability >= 0.40:
-
-        st.info(
-            "Medium purchase intent → "
-            "Show product recommendations "
-            "or limited-time offers."
-        )
-
-    else:
-
-        st.warning(
-            "Low purchase intent → "
-            "Focus on customer engagement."
-        )
+        st.write(e)
